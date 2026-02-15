@@ -37,6 +37,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://green-inovics-002.netlify.app",
   "https://green-inovics-web.netlify.app/",
+  'https://green-inovics-web.netlify.app' 
 ];
 
 if (process.env.ALLOWED_ORIGINS) {
