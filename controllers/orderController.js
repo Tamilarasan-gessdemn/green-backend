@@ -4,6 +4,8 @@ import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
+import { createDelhiveryShipment } from '../utils/delhiveryService.js';
+import { cancelDelhiveryShipment } from '../utils/delhiveryCancelService.js';
 
 /**
  * Place a new order
@@ -136,7 +138,9 @@ export const placeOrder = async (req, res) => {
         title: productName,
         price: productPrice,
         quantity: quantity,
-        weight: weight
+        weight: weight,
+        // ✅ Add image properly
+  image: product.image || product.images?.[0] || ""
       });
 
       console.log(`   ✅ Item processed: Rs.${itemTotal.toFixed(2)}`);
@@ -193,52 +197,57 @@ export const placeOrder = async (req, res) => {
 
     // Create order
     console.log('\n💾 Creating order in database...');
-    const order = await Order.create({
-      userId,
-      items: orderItems,
-      pickupPin: '600001',
-      deliveryPin: String(deliveryPin).trim(),
-      distance: Number(distance),
-      shippingCost: finalShippingCost,
-      subtotal: Number(subtotal),
-      totalAmount: Number(totalAmount),
-      totalWeight: Number(totalWeight),
-      deliveryAddress: cleanAddress,
-      orderStatus: 'Pending',
-      paymentStatus: 'Pending',
-      paymentMethod: paymentMethod || 'COD'
-    });
 
-    console.log(`✅ Order created: ${order.orderNumber}`);
+    const orderData = {
+  userId,
+  items: orderItems,
+  pickupPin: "600001",
+  deliveryPin,
+  distance,
+  shippingCost,
+  subtotal,
+  totalAmount,
+  totalWeight,
+  deliveryAddress: cleanAddress,
+  orderStatus: "Pending",
+  paymentStatus: "Pending",
+  paymentMethod: paymentMethod || "COD",
+ 
 
-    // Clear cart
-    console.log('🗑️  Clearing cart...');
-    try {
-      await Cart.findOneAndUpdate(
-        { user: userId },
-        { $set: { items: [], totalAmount: 0 } }
-      ).catch(() => {
-        return Cart.findOneAndUpdate(
-          { userId: userId },
-          { $set: { items: [], totalAmount: 0 } }
-        );
-      });
-      console.log('✅ Cart cleared');
-    } catch (clearError) {
-      console.log('⚠️  Could not clear cart:', clearError.message);
-    }
+  // ✅ Generate orderNumber before shipment
+  orderNumber: "ORD" + Date.now()
+};
 
-    console.log('=== ORDER PLACEMENT COMPLETED ✅ ===\n');
+// 2. Create shipment first
+const delhiveryResponse = await createDelhiveryShipment(orderData);
 
-    res.status(201).json({
-      success: true,
-      message: 'Order placed successfully',
-      orderId: order._id,
-      orderNumber: order.orderNumber,
-      totalAmount: order.totalAmount,
-      orderStatus: order.orderStatus
-    });
+if (!delhiveryResponse.success) {
+  return res.status(400).json({
+    success: false,
+    message: "Shipment creation failed",
+    error: delhiveryResponse.rmk
+  });
+}
 
+// 3. Shipment success → Save order
+const waybill = delhiveryResponse.packages?.[0]?.waybill;
+
+orderData.waybill = waybill;
+orderData.orderStatus = "Confirmed";
+
+const order = await Order.create(orderData);
+
+// 4. Clear cart after success
+await Cart.findOneAndUpdate(
+  { user: userId },
+  { $set: { items: [], totalAmount: 0 } }
+);
+
+res.status(201).json({
+  success: true,
+  message: "Order placed successfully",
+  data:order  
+});
   } catch (error) {
     console.log('\n=== ORDER PLACEMENT FAILED ❌ ===');
     console.error('Error Type:', error.name);
@@ -379,60 +388,59 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 
-/**
- * Cancel order
- */
 export const cancelOrder = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid order ID'
-      });
-    }
 
     const order = await Order.findOne({ _id: id, userId });
 
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: 'Order not found'
+        message: "Order not found"
       });
     }
 
-    if (!['Pending', 'Confirmed'].includes(order.orderStatus)) {
+    if (!["Pending", "Confirmed"].includes(order.orderStatus)) {
       return res.status(400).json({
         success: false,
-        message: 'Order cannot be cancelled at this stage'
+        message: "Order cannot be cancelled now"
       });
     }
 
-    order.orderStatus = 'Cancelled';
+    // ✅ Cancel shipment in Delhivery
+    if (order.waybill) {
+      const cancelResponse = await cancelDelhiveryShipment(order.waybill);
+
+      if (!cancelResponse.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Delhivery cancellation failed",
+          error: cancelResponse.message
+        });
+      }
+    }
+
+    // ✅ Cancel in DB
+    order.orderStatus = "Cancelled";
     order.cancellationDate = new Date();
     await order.save();
 
     res.status(200).json({
       success: true,
-      message: 'Order cancelled successfully',
-      order: {
-        _id: order._id,
-        orderStatus: order.orderStatus,
-        cancellationDate: order.cancellationDate
-      }
+      message: "Order cancelled successfully in Delhivery + DB"
     });
 
   } catch (error) {
-    console.error('Cancel order error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to cancel order',
+      message: "Cancel order failed",
       error: error.message
     });
   }
 };
+
 
 /**
  * Get all orders (Admin only)
@@ -451,7 +459,7 @@ export const getAllOrders = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate('userId', 'name email')
-      .populate('items.productId', 'name');
+      .populate('items.productId', 'name images category weight dimensions');
 
     const totalOrders = await Order.countDocuments(query);
 

@@ -25,6 +25,7 @@ const orderItemSchema = new mongoose.Schema({
     required: true,
     min: 0.1,
   },
+  
 });
 
 const orderSchema = new mongoose.Schema(
@@ -115,6 +116,29 @@ const orderSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+// 🔹 Logistics Fields
+waybill: { type: String },
+
+shipmentStatus: {
+  type: String,
+  enum: [
+    "Not Created",
+    "Manifested",
+    "In Transit",
+    "Out for Delivery",
+    "Delivered",
+    "RTO",
+    "Cancelled"
+  ],
+  default: "Not Created"
+},
+
+shipmentResponse: { type: Object },
+
+delhiveryCreatedAt: { type: Date },
+
+
+
     // models/Order.js (update the deliveryAddress field)
     deliveryAddress: {
       fullName: { type: String, required: true },

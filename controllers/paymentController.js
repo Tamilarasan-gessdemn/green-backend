@@ -218,7 +218,7 @@ export const handlePaymentFailure = async (req, res) => {
 
     // Find and update order
     const order = await Order.findOne({ _id: orderId, userId });
-
+console.log('order :',order)
     if (!order) {
       return res.status(404).json({
         success: false,

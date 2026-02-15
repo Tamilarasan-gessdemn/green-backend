@@ -120,7 +120,8 @@ export const addToCart = async (req, res) => {
       );
     } else {
       // Add new item to cart
-      cart.items.push({ product: product._id, quantity, weight });
+      cart.items.push({ product: product._id, quantity, weight ,image: product.image
+});
       console.log("Added new item to cart");
     }
 

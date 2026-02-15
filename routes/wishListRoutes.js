@@ -1,71 +1,68 @@
-import express from 'express';
-import Wishlist from '../models/wishlistModel.js';
+import express from "express";
+import Wishlist from "../models/wishlistModel.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Mock user ID
-const MOCK_USER_ID = 'user_123';
+router.use(protect); // 🔥 protect all wishlist routes
 
-// Get user's wishlist
-router.get('/', async (req, res) => {
+
+// GET wishlist
+router.get("/", async (req, res) => {
   try {
-    const items = await Wishlist.find({ userId: MOCK_USER_ID });
+    const userId = req.user.id;
+
+    const items = await Wishlist.find({ userId });
+
     res.json({
       success: true,
-      items: items,
-      totalItems: items.length
+      items,
+      totalItems: items.length,
     });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// Add to wishlist
-router.post('/add', async (req, res) => {
+
+// ADD to wishlist
+router.post("/add", async (req, res) => {
   try {
+    const userId = req.user.id;
     const { productId, name, price, image } = req.body;
-    
-    // Check if already exists
-    const exists = await Wishlist.findOne({ 
-      userId: MOCK_USER_ID, 
-      productId 
-    });
-    
+
+    const exists = await Wishlist.findOne({ userId, productId });
+
     if (exists) {
-      return res.json({ success: false, message: 'Already in wishlist' });
+      return res.json({ success: false, message: "Already in wishlist" });
     }
-    
-    // Add to wishlist
+
     const item = await Wishlist.create({
-      userId: MOCK_USER_ID,
+      userId,
       productId,
       name,
       price,
-      image
+      image,
     });
-    
+
     res.json({ success: true, item });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// Remove from wishlist
-router.delete('/remove/:productId', async (req, res) => {
+
+// REMOVE from wishlist
+router.delete("/remove/:productId", async (req, res) => {
   try {
+    const userId = req.user.id;
     const { productId } = req.params;
-    
-    await Wishlist.deleteOne({ 
-      userId: MOCK_USER_ID, 
-      productId 
-    });
-    
+
+    await Wishlist.deleteOne({ userId, productId });
+
     res.json({ success: true });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
